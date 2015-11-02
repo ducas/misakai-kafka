@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Misakai.Kafka;
 
 namespace Misakai.Kafka
 {
@@ -9,7 +8,7 @@ namespace Misakai.Kafka
     /// Class that represents the api call to commit a specific set of offsets for a given topic.  The offset is saved under the 
     /// arbitrary ConsumerGroup name provided by the call.
     /// </summary>
-    public sealed class OffsetCommitRequest : KafkaRequest, IKafkaRequest<OffsetCommitResponse>
+    public class OffsetCommitRequest : KafkaRequest, IKafkaRequest<OffsetCommitResponse>
     {
         public ApiKeyRequestType ApiKey { get { return ApiKeyRequestType.OffsetCommit; } }
         public string ConsumerGroup { get; set; }
@@ -17,11 +16,7 @@ namespace Misakai.Kafka
 
         public void Encode(BinaryStream writer)
         {
-            if (this.OffsetCommits == null)
-                this.OffsetCommits = new List<OffsetCommit>();
-
-            var topicGroups = this.OffsetCommits
-                .GroupBy(x => x.Topic).ToList();
+            if (this.OffsetCommits == null) this.OffsetCommits = new List<OffsetCommit>();
 
             // Here we put a placeholder for the length
             var placeholder = writer.PutPlaceholder();
@@ -32,16 +27,16 @@ namespace Misakai.Kafka
             writer.Write(this.Correlation);
             writer.Write(this.Client);
 
-            // Write topic groups
+            // Write the consumer group
             writer.Write(this.ConsumerGroup);
+
+            var topicGroups = this.OffsetCommits.GroupBy(x => x.Topic).ToList();
             writer.Write(topicGroups.Count);
 
             foreach (var topicGroup in topicGroups)
             {
                 var partitions = topicGroup
                     .GroupBy(x => x.PartitionId).ToList();
-
-                // Write topic group and #partitions
                 writer.Write(topicGroup.Key);
                 writer.Write(partitions.Count);
 
@@ -49,7 +44,6 @@ namespace Misakai.Kafka
                 {
                     foreach (var commit in partition)
                     {
-                        // Write partition info
                         writer.Write(partition.Key);
                         writer.Write(commit.Offset);
                         writer.Write(commit.TimeStamp);
@@ -58,16 +52,15 @@ namespace Misakai.Kafka
                 }
             }
 
-
             // Write the length at the placeholder
             writer.WriteLengthAt(placeholder);
         }
 
-        public IEnumerable<OffsetCommitResponse> Decode(byte[] data)
+        public IEnumerable<OffsetCommitResponse> Decode(byte[] payload)
         {
-            var stream = new BinaryReader(data);
-
+            var stream = new BinaryReader(payload);
             var correlationId = stream.ReadInt32();
+            
             var topicCount = stream.ReadInt32();
             for (int i = 0; i < topicCount; i++)
             {
@@ -87,8 +80,6 @@ namespace Misakai.Kafka
                 }
             }
         }
-
-
     }
 
     public class OffsetCommit
@@ -97,22 +88,18 @@ namespace Misakai.Kafka
         /// The topic the offset came from.
         /// </summary>
         public string Topic { get; set; }
-
         /// <summary>
         /// The partition the offset came from.
         /// </summary>
         public int PartitionId { get; set; }
-
         /// <summary>
         /// The offset number to commit as completed.
         /// </summary>
         public long Offset { get; set; }
-
         /// <summary>
         /// If the time stamp field is set to -1, then the broker sets the time stamp to the receive time before committing the offset.
         /// </summary>
         public long TimeStamp { get; set; }
-
         /// <summary>
         /// Descriptive metadata about this commit.
         /// </summary>
@@ -122,7 +109,7 @@ namespace Misakai.Kafka
         {
             TimeStamp = -1;
         }
-    
+
     }
 
     public class OffsetCommitResponse
